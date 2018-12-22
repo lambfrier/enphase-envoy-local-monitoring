@@ -15,7 +15,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
+    "flag"
+    "net/http"
 	"github.com/influxdata/influxdb/client/v2"
     "time"
 )
@@ -57,10 +58,24 @@ type Eim struct {
 }
 
 func main() {
-	jsonData, err := ioutil.ReadFile(os.Args[1])
-	check(err)
+    envoyHostPtr := flag.String("e", "envoy", "IP or hostname of Envoy")
+    influxAddrPtr := flag.String("i", "http://localhost:8086", "InfluxDB connection address")
+    dbNamePtr := flag.String("db", "solar", "Influx database name to put readings in")
+    dbUserPtr := flag.String("u", "user", "DB username")
+    dbPwPtr := flag.String("p", "passw0rd", "DB password")
+    measurementNamePtr := flag.String("m", "readings", "Measurement name to use (table name equivalent)")
+    flag.Parse()
 
-    influxaddr, database, username, password := os.Args[2], os.Args[3], os.Args[4], os.Args[5]
+    envoyUrl := "http://"+ *envoyHostPtr + "/production.json?details=1"
+    envoyClient := http.Client{
+		Timeout: time.Second * 2, // Maximum of 2 secs
+	}
+	req, err := http.NewRequest(http.MethodGet, envoyUrl, nil)
+    check(err)
+	resp, err := envoyClient.Do(req)
+    check(err)
+	jsonData, err := ioutil.ReadAll(resp.Body)
+    check(err)
 
 	var apiJsonObj struct {
 		Production  json.RawMessage
@@ -71,36 +86,36 @@ func main() {
     check(err)
 
 	inverters := Inverters{}
-	prod_readings := Eim{}
-	productionObj := []interface{}{&inverters, &prod_readings}
+	prodReadings := Eim{}
+	productionObj := []interface{}{&inverters, &prodReadings}
 	err = json.Unmarshal(apiJsonObj.Production, &productionObj)
     check(err)
 
-	fmt.Printf("%d production: %.3f\n", prod_readings.ReadingTime, prod_readings.WNow)
+	fmt.Printf("%d production: %.3f\n", prodReadings.ReadingTime, prodReadings.WNow)
 
-	consumption_readings := []Eim{}
-	err = json.Unmarshal(apiJsonObj.Consumption, &consumption_readings)
+	consumptionReadings := []Eim{}
+	err = json.Unmarshal(apiJsonObj.Consumption, &consumptionReadings)
     check(err)
-	for _, eim := range consumption_readings {
+	for _, eim := range consumptionReadings {
 		fmt.Printf("%d %s: %.3f\n", eim.ReadingTime, eim.MeasurementType, eim.WNow)
 	}
 
     // Connect to influxdb specified in commandline arguments
     c, err := client.NewHTTPClient(client.HTTPConfig{
-        Addr:     influxaddr,
-        Username: username,
-        Password: password,
+        Addr:     *influxAddrPtr,
+        Username: *dbUserPtr,
+        Password: *dbPwPtr,
     })
     check(err)
     defer c.Close()
 
     bp, err := client.NewBatchPoints(client.BatchPointsConfig{
-        Database:  database,
+        Database:  *dbNamePtr,
         Precision: "s",
     })
     check(err)
 
-    readings := append(consumption_readings, prod_readings)
+    readings := append(consumptionReadings, prodReadings)
     for _, reading := range readings {
         tags := map[string]string{
             "type": reading.MeasurementType,
@@ -111,7 +126,7 @@ func main() {
         createdTime := time.Unix(reading.ReadingTime, 0)
         check(err)
         pt, err := client.NewPoint(
-            "reading",
+            *measurementNamePtr,
             tags,
             fields,
             createdTime,
