@@ -13,12 +13,12 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
-	"io/ioutil"
-    "flag"
-    "net/http"
 	"github.com/influxdata/influxdb/client/v2"
-    "time"
+	"io/ioutil"
+	"net/http"
+	"time"
 )
 
 func check(e error) {
@@ -58,24 +58,24 @@ type Eim struct {
 }
 
 func main() {
-    envoyHostPtr := flag.String("e", "envoy", "IP or hostname of Envoy")
-    influxAddrPtr := flag.String("i", "http://localhost:8086", "InfluxDB connection address")
-    dbNamePtr := flag.String("db", "solar", "Influx database name to put readings in")
-    dbUserPtr := flag.String("u", "user", "DB username")
-    dbPwPtr := flag.String("p", "passw0rd", "DB password")
-    measurementNamePtr := flag.String("m", "readings", "Measurement name to use (table name equivalent)")
-    flag.Parse()
+	envoyHostPtr := flag.String("e", "envoy", "IP or hostname of Envoy")
+	influxAddrPtr := flag.String("i", "http://localhost:8086", "InfluxDB connection address")
+	dbNamePtr := flag.String("db", "solar", "Influx database name to put readings in")
+	dbUserPtr := flag.String("u", "user", "DB username")
+	dbPwPtr := flag.String("p", "passw0rd", "DB password")
+	measurementNamePtr := flag.String("m", "readings", "Measurement name to use (table name equivalent)")
+	flag.Parse()
 
-    envoyUrl := "http://"+ *envoyHostPtr + "/production.json?details=1"
-    envoyClient := http.Client{
+	envoyUrl := "http://" + *envoyHostPtr + "/production.json?details=1"
+	envoyClient := http.Client{
 		Timeout: time.Second * 2, // Maximum of 2 secs
 	}
 	req, err := http.NewRequest(http.MethodGet, envoyUrl, nil)
-    check(err)
+	check(err)
 	resp, err := envoyClient.Do(req)
-    check(err)
+	check(err)
 	jsonData, err := ioutil.ReadAll(resp.Body)
-    check(err)
+	check(err)
 
 	var apiJsonObj struct {
 		Production  json.RawMessage
@@ -83,63 +83,62 @@ func main() {
 		Storage     json.RawMessage
 	}
 	err = json.Unmarshal(jsonData, &apiJsonObj)
-    check(err)
+	check(err)
 
 	inverters := Inverters{}
 	prodReadings := Eim{}
 	productionObj := []interface{}{&inverters, &prodReadings}
 	err = json.Unmarshal(apiJsonObj.Production, &productionObj)
-    check(err)
+	check(err)
 
 	fmt.Printf("%d production: %.3f\n", prodReadings.ReadingTime, prodReadings.WNow)
 
 	consumptionReadings := []Eim{}
 	err = json.Unmarshal(apiJsonObj.Consumption, &consumptionReadings)
-    check(err)
+	check(err)
 	for _, eim := range consumptionReadings {
 		fmt.Printf("%d %s: %.3f\n", eim.ReadingTime, eim.MeasurementType, eim.WNow)
 	}
 
-    // Connect to influxdb specified in commandline arguments
-    c, err := client.NewHTTPClient(client.HTTPConfig{
-        Addr:     *influxAddrPtr,
-        Username: *dbUserPtr,
-        Password: *dbPwPtr,
-    })
-    check(err)
-    defer c.Close()
+	// Connect to influxdb specified in commandline arguments
+	c, err := client.NewHTTPClient(client.HTTPConfig{
+		Addr:     *influxAddrPtr,
+		Username: *dbUserPtr,
+		Password: *dbPwPtr,
+	})
+	check(err)
+	defer c.Close()
 
-    bp, err := client.NewBatchPoints(client.BatchPointsConfig{
-        Database:  *dbNamePtr,
-        Precision: "s",
-    })
-    check(err)
+	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+		Database:  *dbNamePtr,
+		Precision: "s",
+	})
+	check(err)
 
-    readings := append(consumptionReadings, prodReadings)
-    for _, reading := range readings {
-        tags := map[string]string{
-            "type": reading.MeasurementType,
-        }
-        fields := map[string]interface{}{
-            "WNow": reading.WNow,
-        }
-        createdTime := time.Unix(reading.ReadingTime, 0)
-        check(err)
-        pt, err := client.NewPoint(
-            *measurementNamePtr,
-            tags,
-            fields,
-            createdTime,
-        )
-        check(err)
-        bp.AddPoint(pt)
-    }
+	readings := append(consumptionReadings, prodReadings)
+	for _, reading := range readings {
+		tags := map[string]string{
+			"type": reading.MeasurementType,
+		}
+		fields := map[string]interface{}{
+			"watts": reading.WNow,
+		}
+		createdTime := time.Unix(reading.ReadingTime, 0)
+		check(err)
+		pt, err := client.NewPoint(
+			*measurementNamePtr,
+			tags,
+			fields,
+			createdTime,
+		)
+		check(err)
+		bp.AddPoint(pt)
+	}
 
-    // Write the batch
-    err = c.Write(bp)
-    check(err)
+	// Write the batch
+	err = c.Write(bp)
+	check(err)
 
-    err = c.Close()
-    check(err)
+	err = c.Close()
+	check(err)
 }
-
