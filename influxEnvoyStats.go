@@ -1,7 +1,7 @@
-// Get Enphase Envoy Solar production data into influxdb
+// Get Enphase Envoy Solar production data into InfluxDB
 
-// e.g. invocation:
-// > influxEnvoyStats XX YY
+// For options:
+// > influxEnvoyStats -h
 
 // API path used by the webpage provided by Envoy is e.g.:
 //  http://envoy/production.json?details=1
@@ -59,11 +59,11 @@ type Eim struct {
 
 func main() {
 	envoyHostPtr := flag.String("e", "envoy", "IP or hostname of Envoy")
-	influxAddrPtr := flag.String("i", "http://localhost:8086", "InfluxDB connection address")
-	dbNamePtr := flag.String("db", "solar", "Influx database name to put readings in")
-	dbUserPtr := flag.String("u", "user", "DB username")
-	dbPwPtr := flag.String("p", "passw0rd", "DB password")
-	measurementNamePtr := flag.String("m", "readings", "Measurement name to use (table name equivalent)")
+	influxAddrPtr := flag.String("dba", "http://localhost:8086", "InfluxDB connection address")
+	dbNamePtr := flag.String("dbn", "solar", "Influx database name to put readings in")
+	dbUserPtr := flag.String("dbu", "user", "DB username")
+	dbPwPtr := flag.String("dbp", "pw", "DB password")
+	measurementNamePtr := flag.String("m", "readings", "Influx measurement name customisation (table name equivalent)")
 	flag.Parse()
 
 	envoyUrl := "http://" + *envoyHostPtr + "/production.json?details=1"
